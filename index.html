@@ -1,0 +1,1074 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<title>はがき宛名印刷ツール</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Noto+Serif+JP:wght@400;700&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<style>
+  :root{
+    --pc-w: 100mm;
+    --pc-h: 148mm;
+  }
+  * { box-sizing: border-box; }
+  body {
+    font-family: "Hiragino Kaku Gothic ProN","Meiryo","Yu Gothic",sans-serif;
+    margin: 0;
+    background: #f3f4f6;
+    color: #222;
+  }
+  .app {
+    display: flex;
+    height: 100vh;
+  }
+  .panel {
+    width: 288px;
+    flex: none;
+    background: #fff;
+    border-right: 1px solid #ddd;
+    padding: 16px;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+  }
+  .panel details { margin: 0; }
+  .panel summary {
+    font-size: 15px;
+    margin: 18px -6px 8px;
+    padding: 4px 6px;
+    border-bottom: 2px solid #2f6fed;
+    color: #2f6fed;
+    cursor: pointer;
+    user-select: none;
+    border-radius: 4px 4px 0 0;
+    transition: background-color .12s;
+  }
+  .panel summary:hover { background-color: #e8f0ff; }
+  .panel details:first-of-type summary { margin-top: 0; }
+  .panel .section-body { padding-top: 2px; }
+  /* 右カラム：宛名リストをヘッダー固定＋表だけスクロールで画面いっぱいに表示する */
+  .recipient-panel {
+    width: 420px;
+    display: flex;
+    flex-direction: column;
+    height: 100vh;
+    padding: 16px;
+    overflow: hidden;
+  }
+  .recipient-title-row {
+    flex: none;
+    display: flex;
+    align-items: baseline;
+    justify-content: flex-start;
+    gap: 2em;
+    margin-bottom: 10px;
+  }
+  .recipient-panel h2 {
+    font-size: 16px;
+    margin: 0;
+    color: #2f6fed;
+  }
+  .recipient-header {
+    flex: none;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 8px;
+  }
+  .sel-count { font-weight: 700; color: #2f6fed; font-size: 14px; }
+  .recipient-title-row .hint { font-size: 13px; color: #000; }
+  #selAllBtn, #selNoneBtn, #unlockLineBtn { font-size: 14px; }
+  .line-unlock-row { flex: none; margin-bottom: 8px; }
+  .btn.btn-line { background: #06c755; color: #fff; }
+  .btn.btn-line-outline { background: #fff; color: #06c755; border: 2px solid #06c755; }
+  .recipient-table-wrap { flex: 1 1 0; min-height: 0; overflow: auto; border: 1px solid #eee; }
+  .recipient-table-wrap table.csv-table { font-size: 12px; }
+  table.csv-table td.dim-cell { opacity: .4; }
+  .line-icon-cell { text-align: center; width: 20px; }
+  .line-icon { width: 16px; height: 16px; vertical-align: middle; }
+  .field { margin-bottom: 10px; }
+  .field label {
+    display: block;
+    font-size: 12px;
+    color: #555;
+    margin-bottom: 2px;
+  }
+  .field label.label-emphasis {
+    font-size: 14px;
+    font-weight: 700;
+    color: #333;
+  }
+  .field select, .field input[type=text], .field input[type=number], .field textarea {
+    width: 100%;
+    padding: 5px 6px;
+    font-size: 13px;
+    border: 1px solid #ccc;
+    border-radius: 4px;
+    font-family: inherit;
+    resize: vertical;
+  }
+  #editAddr, #editName { font-size: 16px; padding: 8px; }
+  .field-label-row { display: flex; align-items: center; justify-content: space-between; margin-bottom: 2px; }
+  .field-label-row label { margin-bottom: 0; }
+  .row2 { display: flex; gap: 8px; }
+  .row2 .field { flex: 1; }
+  .btn {
+    display: inline-block;
+    background: #2f6fed;
+    color: #fff;
+    border: none;
+    padding: 8px 14px;
+    border-radius: 5px;
+    font-size: 13px;
+    cursor: pointer;
+    margin: 3px 4px 3px 0;
+  }
+  .btn.secondary { background: #6b7280; }
+  .btn.small { padding: 4px 8px; font-size: 12px; }
+  .btn.primary-action {
+    display: block;
+    width: 100%;
+    background: #e8590c;
+    font-size: 15px;
+    font-weight: 700;
+    padding: 11px 14px;
+    margin: 6px 0;
+  }
+  /* ログイン済み・読み込み済みなど「もう押す必須ではない」状態を示す控えめな見た目 */
+  .btn.primary-action.done {
+    background: #fff;
+    color: #e8590c;
+    border: 2px solid #e8590c;
+    padding: 9px 14px;
+    position: relative;
+  }
+  .btn.primary-action.done::after {
+    content: "\2713";
+    position: absolute;
+    right: 14px;
+    top: 50%;
+    transform: translateY(-50%);
+    font-weight: 700;
+  }
+  .btn:disabled {
+    background: #d1d5db;
+    color: #9ca3af;
+    border-color: #d1d5db;
+    cursor: not-allowed;
+    opacity: 1;
+  }
+  .btn:hover { opacity: .9; }
+  .spinner {
+    display: inline-block;
+    width: 11px;
+    height: 11px;
+    border: 2px solid #cbd5e1;
+    border-top-color: #2f6fed;
+    border-radius: 50%;
+    vertical-align: -1px;
+    margin-right: 6px;
+    animation: spin .7s linear infinite;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .loading-text { color: #2f6fed; font-weight: 600; }
+  .hint { font-size: 11px; color: #888; line-height: 1.5; margin-top: 2px;}
+  .print-note { font-size: 14px; color: #333; line-height: 1.7; margin-top: 6px; }
+  .print-note b { color: #111; }
+  table.csv-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 11px;
+    margin-top: 8px;
+  }
+  table.csv-table th, table.csv-table td {
+    border: 1px solid #e5e7eb;
+    padding: 3px 5px;
+    text-align: left;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 90px;
+  }
+  table.csv-table th { background: #f3f4f6; position: sticky; top:0; }
+  table.csv-table tr:not(:first-child) { cursor: pointer; }
+  table.csv-table tr:not(:first-child):hover { background: #eef3ff; }
+  table.csv-table tr.current-row { background: #d6e4ff; }
+  table.csv-table tr.current-row:hover { background: #c7d9ff; }
+  table.csv-table td.edited-cell { background: #fff3cd; }
+  #editAddr.edited-field, #editName.edited-field { background: #fff3cd; }
+  .btn.secondary.btn-reset-active { background: #ffe58a; color: #6b5900; }
+  .main {
+    flex: 1;
+    overflow: auto;
+    padding: 10px 24px 24px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+  }
+  #previewLabel {
+    font-size: 13px;
+    font-weight: 700;
+    color: #444;
+    margin-bottom: 6px;
+  }
+  .preview-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+  .preview-row .btn {
+    flex: none;
+    font-size: 18px;
+    line-height: 1;
+    padding: 8px 12px;
+  }
+  #screenPreview {
+    position: relative;
+  }
+  #screenPreview .postcard {
+    box-shadow: 0 2px 10px rgba(0,0,0,.15);
+    background: #fffdf8;
+    border: 1px solid #ccc;
+  }
+  #screenPreview.not-selected .postcard { opacity: .45; }
+  #screenPreview.not-selected::after {
+    content: "印刷されません（未選択）";
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%) rotate(-18deg);
+    font-size: 18px;
+    font-weight: 900;
+    color: rgba(190,0,0,.85);
+    background: rgba(255,255,255,.9);
+    padding: 8px 16px;
+    border: 3px solid rgba(190,0,0,.85);
+    border-radius: 8px;
+    white-space: nowrap;
+    pointer-events: none;
+  }
+  .postcard {
+    width: var(--pc-w);
+    height: var(--pc-h);
+    position: relative;
+    overflow: hidden;
+  }
+  .zip-box-row {
+    position: absolute;
+    display: flex;
+  }
+  .zip-digit {
+    width: 6.2mm;
+    height: 8mm;
+    text-align: center;
+    font-size: 17px;
+    line-height: 8mm;
+    font-family: "Courier New", monospace;
+  }
+  .addr-block, .name-block {
+    font-family: "Noto Serif JP","Yu Mincho","YuMincho","Hiragino Mincho ProN","MS PMincho",serif;
+    position: absolute;
+    display: flex;
+    flex-direction: column;
+  }
+  .addr-block .line, .name-block .line {
+    white-space: nowrap;
+    overflow: hidden;
+  }
+  .addr-block .line { letter-spacing: 0.05em; }
+  .addr-block .line:first-child { text-align: left; }
+  .addr-block .line:last-child { text-align: right; }
+  .name-block {
+    font-weight: bold;
+  }
+  .name-block .line {
+    text-align: justify;
+    text-align-last: justify;
+    text-justify: inter-character;
+  }
+  .guide-outline {
+    outline: 1px dashed rgba(0,120,255,.4);
+  }
+  .stamp-box {
+    position: absolute;
+    background: #d9d9d9;
+  }
+  .design-zone {
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: #d9d9d9;
+  }
+  .line-marker {
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+  }
+  .line-marker-icon { width: 16mm; height: auto; }
+  .line-marker-text { font-size: 12px; font-weight: 700; color: #333; }
+  .sub-hint { font-size: 11px; color:#999; }
+
+  /* ---- Print rules ---- */
+  @media print {
+    .app { display: none; }
+    #printArea { visibility: visible; position: absolute; left: 0; top: 0; }
+    .postcard { page-break-after: always; box-shadow: none; border: none; }
+    @page { size: 100mm 148mm; margin: 0; }
+  }
+  #printArea { display: none; }
+</style>
+</head>
+<body>
+<div class="app">
+
+  <!-- ============ LEFT PANEL ============ -->
+  <div class="panel">
+    <details class="section" open>
+      <summary>① データ読み込み</summary>
+      <div class="section-body">
+        <div class="field">
+          <label>読み込み方法</label>
+          <select id="sourceMode">
+            <option value="csv">CSVファイルから読み込み</option>
+            <option value="excel">Excelファイルから読み込み</option>
+          </select>
+        </div>
+
+        <div id="csvSource">
+          <div class="field">
+            <input type="file" id="csvFile" accept=".csv,text/csv">
+          </div>
+          <div class="hint">Excel等から出力したCSV（1行目は見出し）を選んでください。文字化けする場合は「文字コード」を変えて再読込してください。</div>
+          <div class="field" style="margin-top:8px;">
+            <label>文字コード</label>
+            <select id="encodingSelect">
+              <option value="utf-8">UTF-8（Excel既定・BOM付き含む）</option>
+              <option value="shift-jis" selected>Shift-JIS（古いExcel/文字化けする場合）</option>
+            </select>
+          </div>
+        </div>
+
+        <div id="excelSource" style="display:none;">
+          <div class="field">
+            <input type="file" id="excelFile" accept=".xlsx,.xls">
+          </div>
+          <div class="hint">Excelファイル（1行目は見出し）を選んでください。</div>
+          <div class="field" style="margin-top:8px;">
+            <label>シート</label>
+            <select id="excelSheetSelect" disabled>
+              <option value="">（ファイルを選択してください）</option>
+            </select>
+          </div>
+        </div>
+
+        <div id="dataSummary" class="hint"></div>
+      </div>
+    </details>
+
+    <details class="section">
+      <summary>② 列の対応付け</summary>
+      <div class="section-body">
+        <div class="field">
+          <label>郵便番号の列</label>
+          <select id="mapZip"></select>
+        </div>
+        <div class="field">
+          <label>住所の列</label>
+          <select id="mapAddr1"></select>
+        </div>
+        <div class="field">
+          <label>氏名の列</label>
+          <select id="mapName"></select>
+        </div>
+        <div class="field">
+          <label>LINE登録判定の列</label>
+          <select id="mapLine"></select>
+        </div>
+        <div class="field">
+          <label><input type="checkbox" id="autoHonorific" checked> 氏名に「様」が無ければ自動で付ける</label>
+        </div>
+        <button class="btn secondary small" id="applyMapping">対応付けを反映</button>
+      </div>
+    </details>
+
+    <details class="section" open>
+      <summary>③ 印刷</summary>
+      <div class="section-body">
+        <button class="btn primary-action" id="printAllBtn" disabled>選択中の宛名0件を印刷</button>
+        <button class="btn secondary" id="testPrintBtn">プレビュー中の1枚のみ印刷</button>
+        <div class="print-note">
+          <div>用紙サイズ：<b>はがき (100×148mm)</b></div>
+          <div>余白：<b>なし</b></div>
+          <div>を選んでください。</div>
+        </div>
+      </div>
+    </details>
+  </div>
+
+  <!-- ============ CENTER (PREVIEW) ============ -->
+  <div class="main">
+    <span id="previewLabel">-</span>
+    <div class="preview-row">
+      <button class="btn" id="prevBtn">◀</button>
+      <div id="screenPreview"></div>
+      <button class="btn" id="nextBtn">▶</button>
+    </div>
+
+    <div style="width:100%; max-width:400px; margin-top:10px;">
+      <div class="field">
+        <div class="field-label-row">
+          <label>住所を編集</label>
+          <button class="btn small secondary" id="resetAddrBtn" type="button" disabled>リセット</button>
+        </div>
+        <textarea id="editAddr" rows="2" disabled></textarea>
+      </div>
+      <div class="field">
+        <div class="field-label-row">
+          <label>氏名を編集</label>
+          <button class="btn small secondary" id="resetNameBtn" type="button" disabled>リセット</button>
+        </div>
+        <input type="text" id="editName" disabled>
+      </div>
+      <div class="hint">プレビュー中の宛名を個別に修正できます。データを再読み込みしたり「リセット」を押すと元のデータに戻ります。<b style="color:#000;">ここでの編集内容は元のCSV/Excelファイルに一切保存されません。</b></div>
+    </div>
+  </div>
+
+  <!-- ============ RIGHT PANEL (宛名リスト) ============ -->
+  <div class="panel recipient-panel">
+    <div class="recipient-title-row">
+      <h2>宛名リスト</h2>
+      <span class="hint">印刷する宛名を選択してください</span>
+    </div>
+    <div class="recipient-header">
+      <span>
+        <button class="btn small" id="selAllBtn">すべて選択</button>
+        <button class="btn small secondary" id="selNoneBtn">選択解除</button>
+      </span>
+      <span class="sel-count" id="selCount">0件選択中</span>
+    </div>
+    <div class="line-unlock-row" id="lineUnlockRow" style="display:none;">
+      <button class="btn small btn-line" id="unlockLineBtn" type="button">LINE登録者も印刷する</button>
+    </div>
+    <div class="recipient-table-wrap">
+      <table class="csv-table" id="recipientTable"></table>
+    </div>
+  </div>
+
+</div>
+
+<div id="printArea"></div>
+
+<script>
+(function(){
+  "use strict";
+
+  let headers = [];
+  let rows = [];           // raw csv rows (array of objects, keyed by header)
+  let recipients = [];     // mapped {zip, addr, name, lineRegistered, selected}
+  let previewIndex = 0;
+  let lineRowsLocked = true; // LINE登録済みの行は既定でチェック操作をロックする
+
+  const $ = (id) => document.getElementById(id);
+
+  // ---------- Data source switch (CSV / Excel) ----------
+  $("sourceMode").addEventListener("change", () => {
+    const mode = $("sourceMode").value;
+    $("csvSource").style.display = mode === "csv" ? "block" : "none";
+    $("excelSource").style.display = mode === "excel" ? "block" : "none";
+    $("dataSummary").textContent = "";
+  });
+
+  // ---------- CSV parsing (handles quoted fields, commas, CRLF) ----------
+  function parseCSV(text){
+    // strip BOM
+    if (text.charCodeAt(0) === 0xFEFF) text = text.slice(1);
+    const rows = [];
+    let row = [], field = "", inQuotes = false;
+    for(let i=0;i<text.length;i++){
+      const c = text[i];
+      if(inQuotes){
+        if(c === '"'){
+          if(text[i+1] === '"'){ field += '"'; i++; }
+          else inQuotes = false;
+        } else field += c;
+      } else {
+        if(c === '"') inQuotes = true;
+        else if(c === ','){ row.push(field); field = ""; }
+        else if(c === '\n'){ row.push(field); rows.push(row); row = []; field = ""; }
+        else if(c === '\r'){ /* skip, \n handles push */ }
+        else field += c;
+      }
+    }
+    if(field.length || row.length){ row.push(field); rows.push(row); }
+    return rows.filter(r => r.length > 1 || (r.length===1 && r[0] !== ""));
+  }
+
+  function decodeArrayBuffer(buf, encoding){
+    try{
+      const decoder = new TextDecoder(encoding);
+      return decoder.decode(buf);
+    }catch(e){
+      return new TextDecoder("utf-8").decode(buf);
+    }
+  }
+
+  $("csvFile").addEventListener("change", (e) => {
+    const file = e.target.files[0];
+    if(!file) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      const enc = $("encodingSelect").value;
+      const text = decodeArrayBuffer(reader.result, enc);
+      loadCSVText(text);
+    };
+    reader.readAsArrayBuffer(file);
+  });
+  $("encodingSelect").addEventListener("change", () => {
+    if($("csvFile").files[0]) $("csvFile").dispatchEvent(new Event("change"));
+  });
+
+  function loadCSVText(text){
+    const table = parseCSV(text);
+    if(!applyTable(table)) return;
+    $("dataSummary").textContent = `CSVから ${recipients.length} 件のデータを読み込みました。`;
+  }
+
+  // table: 1行目が見出し、2行目以降がデータの配列（CSVでもExcelでも共通）
+  function applyTable(table){
+    if(!table || table.length < 2){
+      $("dataSummary").textContent = "データを読み取れませんでした。1行目に見出し、2行目以降にデータが必要です。";
+      return false;
+    }
+    headers = table[0].map(h => (h == null ? "" : String(h)).trim());
+    rows = table.slice(1).map(r => {
+      const obj = {};
+      headers.forEach((h, i) => obj[h] = (r[i] == null ? "" : String(r[i])).trim());
+      return obj;
+    });
+    populateMappingSelects();
+    autoDetectMapping();
+    buildRecipients();
+    previewIndex = defaultPreviewIndex();
+    renderRecipientTable();
+    renderPreview();
+    renderEditBox();
+    return true;
+  }
+
+  function populateMappingSelects(){
+    const selects = ["mapZip","mapAddr1","mapName"];
+    selects.forEach(id => {
+      const sel = $(id);
+      sel.innerHTML = "";
+      headers.forEach(h => {
+        const opt = document.createElement("option");
+        opt.value = h; opt.textContent = h;
+        sel.appendChild(opt);
+      });
+    });
+    const lineSel = $("mapLine");
+    lineSel.innerHTML = "";
+    const optNone = document.createElement("option");
+    optNone.value = ""; optNone.textContent = "（使用しない）";
+    lineSel.appendChild(optNone);
+    headers.forEach(h => {
+      const opt = document.createElement("option");
+      opt.value = h; opt.textContent = h;
+      lineSel.appendChild(opt);
+    });
+  }
+
+  function autoDetectMapping(){
+    const pick = (keywords) => headers.find(h => keywords.some(k => h.includes(k)));
+    const zip = pick(["郵便", "〒", "zip", "postal"]);
+    const name = pick(["氏名", "名前", "name", "宛名"]);
+    const addr1 = pick(["住所", "address"]) || headers.find(h => !/郵便|氏名|名前|敬称/.test(h) && h !== zip && h !== name);
+    // 「LINE」を含む見出しを探す（大文字小文字を区別しない。セル内改行があってもLINEの文字列自体は分割されないため検出できる）
+    const line = headers.find(h => /line/i.test(h));
+    if(zip) $("mapZip").value = zip;
+    if(addr1) $("mapAddr1").value = addr1;
+    if(name) $("mapName").value = name;
+    if(line) $("mapLine").value = line;
+  }
+
+  $("applyMapping").addEventListener("click", () => {
+    buildRecipients();
+    previewIndex = defaultPreviewIndex();
+    renderRecipientTable();
+    renderPreview();
+    renderEditBox();
+  });
+
+  // 氏名・住所は生データのまま保持し、様の付与は表示のタイミングで行う
+  // （手動で改行して連名にした場合、行ごとに様を付けるため）
+  function withHonorific(raw){
+    const autoHon = $("autoHonorific").checked;
+    return (raw || "").split("\n").map(line => {
+      const t = line.trim();
+      if(!t) return t;
+      if(autoHon && !/(様|殿|御中)$/.test(t)) return t + " 様";
+      return t;
+    }).join("\n");
+  }
+
+  // チェックボックス列は true/false（文字列化すると "true"/"false"）で入ってくる場合に対応する
+  function isLineTrue(raw){
+    return /^(true|1|はい|✓|レ|済)$/i.test((raw || "").trim());
+  }
+
+  function buildRecipients(){
+    const zipCol = $("mapZip").value;
+    const a1Col = $("mapAddr1").value;
+    const nameCol = $("mapName").value;
+    const lineCol = $("mapLine").value;
+
+    recipients = rows.map((r, idx) => {
+      const name = (r[nameCol] || "").trim();
+      const zip = (r[zipCol] || "").replace(/[^0-9]/g, "");
+      const addr = (r[a1Col] || "").trim();
+      const lineRegistered = lineCol ? isLineTrue(r[lineCol]) : false;
+      return { idx, zip, addr, origAddr: addr, name, origName: name, lineRegistered, selected: !lineRegistered };
+    }).filter(rec => rec.addr || rec.name); // 住所・氏名がともに空欄の行は対象外
+    lineRowsLocked = true;
+  }
+
+  // 読み込み直後のプレビューは、最初の「選択済み（印刷対象）」の宛名を表示する
+  function defaultPreviewIndex(){
+    const i = recipients.findIndex(r => r.selected);
+    return i === -1 ? 0 : i;
+  }
+
+  function renderRecipientTable(){
+    const table = $("recipientTable");
+    table.innerHTML = "";
+    const thead = document.createElement("tr");
+    ["", "郵便番号", "住所", "氏名", "LINE"].forEach(t => {
+      const th = document.createElement("th"); th.textContent = t; thead.appendChild(th);
+    });
+    table.appendChild(thead);
+    recipients.forEach((rec, i) => {
+      const tr = document.createElement("tr");
+      if(i === previewIndex) tr.classList.add("current-row");
+      const dim = rec.lineRegistered && lineRowsLocked;
+
+      const tdChk = document.createElement("td");
+      if(dim) tdChk.classList.add("dim-cell");
+      const chk = document.createElement("input");
+      chk.type = "checkbox"; chk.checked = rec.selected;
+      chk.disabled = dim;
+      chk.addEventListener("change", () => {
+        rec.selected = chk.checked;
+        updateSelCount();
+        if(i === previewIndex) renderPreview();
+      });
+      tdChk.appendChild(chk);
+      tr.appendChild(tdChk);
+
+      const tdZip = document.createElement("td"); tdZip.textContent = rec.zip;
+      if(dim) tdZip.classList.add("dim-cell");
+      tr.appendChild(tdZip);
+
+      const tdAddr = document.createElement("td"); tdAddr.textContent = rec.addr;
+      if(rec.addr !== rec.origAddr) tdAddr.classList.add("edited-cell");
+      if(dim) tdAddr.classList.add("dim-cell");
+      tr.appendChild(tdAddr);
+
+      const tdName = document.createElement("td"); tdName.textContent = withHonorific(rec.name);
+      if(rec.name !== rec.origName) tdName.classList.add("edited-cell");
+      if(dim) tdName.classList.add("dim-cell");
+      tr.appendChild(tdName);
+
+      // LINEアイコンはロック中でも薄くせず、常にはっきり見せる
+      const tdLine = document.createElement("td"); tdLine.classList.add("line-icon-cell");
+      if(rec.lineRegistered){
+        const img = document.createElement("img");
+        img.src = "LINE_RGB.svg"; img.alt = "LINE登録済み"; img.className = "line-icon";
+        tdLine.appendChild(img);
+      }
+      tr.appendChild(tdLine);
+
+      tr.addEventListener("click", (e) => {
+        if(e.target.tagName !== "INPUT"){ previewIndex = i; renderPreview(); renderEditBox(); renderRecipientTable(); }
+      });
+      table.appendChild(tr);
+    });
+    updateSelCount();
+    updateLineUnlockRow();
+  }
+
+  function updateLineUnlockRow(){
+    const hasLineRows = recipients.some(r => r.lineRegistered);
+    const row = $("lineUnlockRow");
+    const btn = $("unlockLineBtn");
+    if(!hasLineRows){ row.style.display = "none"; return; }
+    row.style.display = "block";
+    if(lineRowsLocked){
+      btn.textContent = "LINE登録者も印刷する";
+      btn.className = "btn small btn-line";
+    } else {
+      btn.textContent = "LINE登録者をロックに戻す（印刷しない）";
+      btn.className = "btn small btn-line-outline";
+    }
+  }
+
+  $("unlockLineBtn").addEventListener("click", () => {
+    if(lineRowsLocked){
+      const ok = confirm("LINE登録者も印刷に加えますか？\n※連絡の重複がないかご注意ください。");
+      if(!ok) return;
+      lineRowsLocked = false;
+      // ロック解除と同時に、LINE登録者も印刷対象としてチェックを入れる
+      recipients.forEach(r => { if(r.lineRegistered) r.selected = true; });
+    } else {
+      lineRowsLocked = true;
+      // ロックに戻す際は、解除中に選択されたLINE登録者を安全のため選択解除しておく
+      recipients.forEach(r => { if(r.lineRegistered) r.selected = false; });
+    }
+    renderRecipientTable();
+    renderPreview();
+  });
+
+  function updateSelCount(){
+    const selectedCount = recipients.filter(r => r.selected).length;
+    $("selCount").textContent = `${selectedCount}件選択中`;
+    $("printAllBtn").textContent = `選択中の宛名${selectedCount}件を印刷`;
+    $("printAllBtn").disabled = selectedCount === 0;
+  }
+
+  $("selAllBtn").addEventListener("click", () => {
+    // LINE登録済みがロック中の行は「すべて選択」でも対象にしない
+    recipients.forEach(r => { if(!(r.lineRegistered && lineRowsLocked)) r.selected = true; });
+    renderRecipientTable();
+    renderPreview();
+  });
+  $("selNoneBtn").addEventListener("click", () => {
+    recipients.forEach(r => r.selected = false);
+    renderRecipientTable();
+    renderPreview();
+  });
+
+  // ---------- Postcard rendering ----------
+  const PT_TO_MM = 0.352778;
+  const LINE_HEIGHT_FACTOR = 1.4; // 住所・氏名の1行分の高さ＝フォントサイズ×この倍率
+  const STAMP_BOX = { left: 5, top: 5, width: 22, height: 26 }; // 普通切手の実寸（縦26mm×横22mm）。プレビュー確認用で印刷はされない。
+  const DESIGN_ZONE_TOP_MM = 48; // はがきの下から100mm（148mm-100mm）。他デザインが入るため宛名を印刷できない範囲の目安。プレビュー確認用で印刷はされない。
+
+  // 印字位置・フォントサイズ（固定値。調整UIは廃止したため、変更したい場合はここを直接編集する）
+  const ADDR_FONT_SIZE_PT = 13;
+  const NAME_FONT_SIZE_PT = 24;
+  const ZIP_X_MM = 44.3, ZIP_Y_MM = 10;
+  const ADDR_LEFT_MM = 33, ADDR_RIGHT_MM = 10, ADDR_Y_MM = 20;
+  const NAME_LEFT_MM = 18, NAME_RIGHT_MM = 12, NAME_Y_MM = 36;
+
+  // 手動改行（氏名編集欄でのEnter）があればそれを優先し、無ければ最初の半角/全角スペースの位置で2行目に分割する。
+  // その最初のスペースは表示から取り除く。2つ目以降のスペースはそのまま残す。
+  function splitAddressLines(raw){
+    const text = raw || "";
+    if(text.indexOf("\n") !== -1){
+      const i = text.indexOf("\n");
+      return [text.slice(0, i), text.slice(i + 1).replace(/\n/g, " ")];
+    }
+    const m = text.match(/[ 　]/);
+    if(m) return [text.slice(0, m.index), text.slice(m.index + 1)];
+    return [text, ""];
+  }
+
+  // 1行目＝左詰め、2行目＝右詰めの最大2行ブロックを作る（住所用）。高さは指定フォントサイズの2行分に固定。
+  function twoLineBlockHTML(className, lines, posLeft, posTop, widthMM, fontSizePt, forPrint){
+    const lineHeightMM = fontSizePt * PT_TO_MM * LINE_HEIGHT_FACTOR;
+    const heightMM = lineHeightMM * 2;
+    const cls = className + (!forPrint ? " guide-outline" : "");
+    const lineHTML = (text) => `<div class="line" style="font-size:${fontSizePt}pt; line-height:${lineHeightMM}mm;">${escapeHTML(text)}</div>`;
+    return `<div class="${cls}" style="left:${posLeft}mm; top:${posTop}mm; width:${widthMM}mm; height:${heightMM}mm;">${lineHTML(lines[0])}${lineHTML(lines[1])}</div>`;
+  }
+
+  // 枠の幅いっぱいに均等割り付けする1行ブロックを作る（氏名用）。高さは指定フォントサイズの1行分。
+  function oneLineBlockHTML(className, text, posLeft, posTop, widthMM, fontSizePt, forPrint){
+    const heightMM = fontSizePt * PT_TO_MM * LINE_HEIGHT_FACTOR;
+    const cls = className + (!forPrint ? " guide-outline" : "");
+    return `<div class="${cls}" style="left:${posLeft}mm; top:${posTop}mm; width:${widthMM}mm; height:${heightMM}mm;"><div class="line" style="font-size:${fontSizePt}pt; line-height:${heightMM}mm;">${escapeHTML(text)}</div></div>`;
+  }
+
+  function buildPostcardHTML(rec, forPrint){
+    const addrWidthMM = 100 - ADDR_LEFT_MM - ADDR_RIGHT_MM;
+    const nameWidthMM = 100 - NAME_LEFT_MM - NAME_RIGHT_MM;
+
+    const zipDigits = (rec.zip || "").padEnd(7, " ").slice(0,7).split("");
+    const zipHTML = zipDigits.map(d => `<span class="zip-digit">${d.trim()}</span>`).join("");
+
+    const stampHTML = forPrint ? "" : `<div class="stamp-box" style="left:${STAMP_BOX.left}mm; top:${STAMP_BOX.top}mm; width:${STAMP_BOX.width}mm; height:${STAMP_BOX.height}mm;"></div>`;
+    const designZoneHTML = forPrint ? "" : `<div class="design-zone" style="top:${DESIGN_ZONE_TOP_MM}mm;"></div>`;
+    const lineMarkerHTML = (!forPrint && rec.lineRegistered) ? `
+      <div class="line-marker" style="top:${DESIGN_ZONE_TOP_MM}mm;">
+        <img src="LINE_RGB.svg" alt="LINE" class="line-marker-icon">
+        <div class="line-marker-text">LINE登録者です</div>
+      </div>` : "";
+
+    const addrHTML = twoLineBlockHTML("addr-block", splitAddressLines(rec.addr), ADDR_LEFT_MM, ADDR_Y_MM, addrWidthMM, ADDR_FONT_SIZE_PT, forPrint);
+    const nameHTML = oneLineBlockHTML("name-block", withHonorific(rec.name), NAME_LEFT_MM, NAME_Y_MM, nameWidthMM, NAME_FONT_SIZE_PT, forPrint);
+
+    return `
+      <div class="postcard">
+        ${stampHTML}
+        ${designZoneHTML}
+        ${lineMarkerHTML}
+        <div class="zip-box-row" style="left:${ZIP_X_MM}mm; top:${ZIP_Y_MM}mm;">
+          ${zipHTML}
+        </div>
+        ${addrHTML}
+        ${nameHTML}
+      </div>
+    `;
+  }
+
+  function escapeHTML(s){
+    return (s||"").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+  }
+
+  // 住所・氏名の各行が枠の幅に収まらない場合、収まるまで少しずつ文字サイズを縮小する（行ごとに独立して縮小）
+  function fitFontSize(el){
+    if(!el) return;
+    const MIN_FONT_PT = 6;
+    let fs = parseFloat(el.style.fontSize) || 11;
+    while(fs > MIN_FONT_PT && (el.scrollWidth > el.clientWidth + 1 || el.scrollHeight > el.clientHeight + 1)){
+      fs -= 0.5;
+      el.style.fontSize = fs + "pt";
+    }
+  }
+  function fitAddressFontSize(scopeEl){
+    scopeEl.querySelectorAll(".addr-block .line, .name-block .line").forEach(fitFontSize);
+  }
+
+  function renderPreview(){
+    const container = $("screenPreview");
+    if(recipients.length === 0){
+      container.classList.remove("not-selected");
+      container.innerHTML = `<div class="postcard" style="display:flex;align-items:center;justify-content:center;color:#aaa;">CSVを読み込んでください</div>`;
+      $("previewLabel").textContent = "-";
+      return;
+    }
+    if(previewIndex >= recipients.length) previewIndex = recipients.length - 1;
+    if(previewIndex < 0) previewIndex = 0;
+    const rec = recipients[previewIndex];
+    container.innerHTML = buildPostcardHTML(rec, false);
+    fitAddressFontSize(container);
+    if(rec.selected){
+      container.classList.remove("not-selected");
+      const selList = recipients.filter(r => r.selected);
+      const pos = selList.indexOf(rec);
+      $("previewLabel").textContent = `${pos+1} / ${selList.length}`;
+    } else {
+      container.classList.add("not-selected");
+      $("previewLabel").textContent = "印刷対象外（未選択）";
+    }
+  }
+
+  // プレビュー欄の下にある氏名・住所の編集用テキストエリアを、現在プレビュー中の1件の内容で更新する
+  // リセットボタンの有効/無効・黄色表示だけを更新する（テキストボックスのvalueは触らない＝入力中のカーソル位置を保つ）
+  function updateEditedStyling(){
+    const nameEl = $("editName"), addrEl = $("editAddr");
+    const resetAddrBtn = $("resetAddrBtn"), resetNameBtn = $("resetNameBtn");
+    const rec = recipients[previewIndex];
+    if(!rec){
+      addrEl.classList.remove("edited-field"); nameEl.classList.remove("edited-field");
+      resetAddrBtn.disabled = true; resetNameBtn.disabled = true;
+      resetAddrBtn.classList.remove("btn-reset-active"); resetNameBtn.classList.remove("btn-reset-active");
+      return;
+    }
+    const addrEdited = rec.addr !== rec.origAddr;
+    const nameEdited = rec.name !== rec.origName;
+    addrEl.classList.toggle("edited-field", addrEdited);
+    nameEl.classList.toggle("edited-field", nameEdited);
+    resetAddrBtn.disabled = !addrEdited;
+    resetNameBtn.disabled = !nameEdited;
+    resetAddrBtn.classList.toggle("btn-reset-active", addrEdited);
+    resetNameBtn.classList.toggle("btn-reset-active", nameEdited);
+  }
+
+  function renderEditBox(){
+    const nameEl = $("editName"), addrEl = $("editAddr");
+    if(recipients.length === 0){
+      nameEl.value = ""; addrEl.value = "";
+      nameEl.disabled = true; addrEl.disabled = true;
+      updateEditedStyling();
+      return;
+    }
+    const rec = recipients[previewIndex];
+    nameEl.disabled = false; addrEl.disabled = false;
+    nameEl.value = rec.name;
+    addrEl.value = rec.addr;
+    updateEditedStyling();
+  }
+
+  $("editName").addEventListener("input", () => {
+    const rec = recipients[previewIndex];
+    if(!rec) return;
+    // 氏名は1行のみ。改行が紛れ込んだ場合は無効化して除去する
+    const cleaned = $("editName").value.replace(/[\n\r]/g, "");
+    if(cleaned !== $("editName").value) $("editName").value = cleaned;
+    rec.name = cleaned;
+    renderPreview();
+    renderRecipientTable();
+    updateEditedStyling();
+  });
+  $("editName").addEventListener("keydown", (e) => {
+    if(e.key === "Enter") e.preventDefault();
+  });
+  $("editAddr").addEventListener("input", () => {
+    const rec = recipients[previewIndex];
+    if(!rec) return;
+    rec.addr = $("editAddr").value;
+    renderPreview();
+    renderRecipientTable();
+    updateEditedStyling();
+  });
+
+  $("resetAddrBtn").addEventListener("click", () => {
+    const rec = recipients[previewIndex];
+    if(!rec) return;
+    rec.addr = rec.origAddr;
+    renderPreview();
+    renderRecipientTable();
+    renderEditBox();
+  });
+  $("resetNameBtn").addEventListener("click", () => {
+    const rec = recipients[previewIndex];
+    if(!rec) return;
+    rec.name = rec.origName;
+    renderPreview();
+    renderRecipientTable();
+    renderEditBox();
+  });
+
+  $("autoHonorific").addEventListener("change", () => {
+    renderPreview();
+    renderRecipientTable();
+  });
+
+  // 選択中（印刷対象）の宛名だけを対象に、前／次の選択済み宛名へ移動する（未選択はスキップする）
+  function findNextSelectedIndex(fromIndex, direction){
+    let i = fromIndex + direction;
+    while(i >= 0 && i < recipients.length){
+      if(recipients[i].selected) return i;
+      i += direction;
+    }
+    return null;
+  }
+  function stepPreview(direction){
+    const next = findNextSelectedIndex(previewIndex, direction);
+    if(next === null) return;
+    previewIndex = next;
+    renderPreview();
+    renderEditBox();
+    renderRecipientTable();
+  }
+  $("prevBtn").addEventListener("click", () => stepPreview(-1));
+  $("nextBtn").addEventListener("click", () => stepPreview(1));
+
+  // 左右矢印キーでプレビューの前へ／次へを操作できるようにする
+  // （入力欄・テキストエリア・セレクトにフォーカスがある間は、本来のカーソル移動や数値増減を優先する）
+  document.addEventListener("keydown", (e) => {
+    if(e.key !== "ArrowLeft" && e.key !== "ArrowRight") return;
+    const tag = document.activeElement ? document.activeElement.tagName : "";
+    if(["INPUT","TEXTAREA","SELECT"].includes(tag)) return;
+    if(recipients.length === 0) return;
+    e.preventDefault();
+    if(e.key === "ArrowLeft") $("prevBtn").click();
+    else $("nextBtn").click();
+  });
+
+  // ---------- Printing ----------
+  function printRecipients(list){
+    const printArea = $("printArea");
+    printArea.innerHTML = list.map(rec => buildPostcardHTML(rec, true)).join("");
+    // 文字サイズの自動縮小は実際のレイアウト幅を測って判定するため、
+    // measureする前に表示状態（display:block）にしておく必要がある。
+    // display:none のまま測ると幅が常に0になり、縮小されずに長い文字列が枠外で欠けて印刷されてしまう。
+    printArea.style.display = "block";
+    printArea.querySelectorAll(".postcard").forEach(fitAddressFontSize);
+    setTimeout(() => {
+      window.print();
+      setTimeout(() => { printArea.style.display = "none"; }, 500);
+    }, 100);
+  }
+
+  $("printAllBtn").addEventListener("click", () => {
+    const selected = recipients.filter(r => r.selected);
+    if(selected.length === 0){ alert("印刷対象が選択されていません。"); return; }
+    printRecipients(selected);
+  });
+
+  $("testPrintBtn").addEventListener("click", () => {
+    const sample = recipients.length ? recipients[previewIndex] :
+      { zip: "1234567", addr: "東京都千代田区丸の内1-1-1 サンプルビル101", name: "見本 太郎 様" };
+    printRecipients([sample]);
+  });
+
+  // ---------- Excel file reading ----------
+  let excelWorkbook = null;
+
+  function setLoading(msg){
+    $("dataSummary").innerHTML = `<span class="spinner"></span><span class="loading-text">${escapeHTML(msg)}</span>`;
+  }
+
+  $("excelFile").addEventListener("change", (e) => {
+    const file = e.target.files[0];
+    const sheetSel = $("excelSheetSelect");
+    sheetSel.innerHTML = "";
+    sheetSel.disabled = true;
+    excelWorkbook = null;
+    if(!file) return;
+    setLoading("Excelファイルを読み込み中…");
+    const reader = new FileReader();
+    reader.onload = () => {
+      try{
+        excelWorkbook = XLSX.read(reader.result, { type: "array" });
+        populateExcelSheetSelect();
+        loadExcelSheet($("excelSheetSelect").value);
+      }catch(err){
+        $("dataSummary").textContent = "Excelファイルを読み取れませんでした。ファイル形式をご確認ください。";
+      }
+    };
+    reader.readAsArrayBuffer(file);
+  });
+
+  // シートが複数ある場合に選べるようにする。何もしなければ先頭のシートが自動で使われる。
+  function populateExcelSheetSelect(){
+    const sel = $("excelSheetSelect");
+    sel.innerHTML = "";
+    (excelWorkbook.SheetNames || []).forEach(name => {
+      const opt = document.createElement("option");
+      opt.value = name; opt.textContent = name;
+      sel.appendChild(opt);
+    });
+    sel.disabled = excelWorkbook.SheetNames.length === 0;
+  }
+
+  $("excelSheetSelect").addEventListener("change", () => {
+    loadExcelSheet($("excelSheetSelect").value);
+  });
+
+  function loadExcelSheet(sheetName){
+    if(!excelWorkbook || !sheetName) return;
+    const ws = excelWorkbook.Sheets[sheetName];
+    const table = XLSX.utils.sheet_to_json(ws, { header: 1, defval: "", raw: false });
+    if(applyTable(table)){
+      $("dataSummary").textContent = `「${sheetName}」から ${recipients.length} 件のデータを読み込みました。`;
+    }
+  }
+
+  renderRecipientTable();
+  renderPreview();
+  renderEditBox();
+})();
+</script>
+</body>
+</html>
