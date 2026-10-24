@@ -6,7 +6,6 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Noto+Serif+JP:wght@400;700&display=swap" rel="stylesheet">
-<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <style>
   :root{
     --pc-w: 100mm;
@@ -168,6 +167,22 @@
   @keyframes spin { to { transform: rotate(360deg); } }
   .loading-text { color: #2f6fed; font-weight: 600; }
   .hint { font-size: 11px; color: #888; line-height: 1.5; margin-top: 2px;}
+  .visually-hidden {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    opacity: 0;
+  }
+  .file-select-btn {
+    text-align: center;
+    font-size: 16px;
+    padding: 14px;
+  }
+  .file-select-btn:hover { opacity: .9; }
+  #csvFileName { word-break: break-all; }
+  .encoding-advanced { margin-top: 10px; }
+  .encoding-advanced summary { cursor: pointer; }
   .print-note { font-size: 14px; color: #333; line-height: 1.7; margin-top: 6px; }
   .print-note b { color: #111; }
   table.csv-table {
@@ -317,39 +332,21 @@
       <summary>① データ読み込み</summary>
       <div class="section-body">
         <div class="field">
-          <label>読み込み方法</label>
-          <select id="sourceMode">
-            <option value="csv">CSVファイルから読み込み</option>
-            <option value="excel">Excelファイルから読み込み</option>
-          </select>
+          <label class="btn primary-action file-select-btn" for="csvFile">CSVファイルを選択</label>
+          <input type="file" id="csvFile" accept=".csv,text/csv" class="visually-hidden">
+          <div id="csvFileName" class="hint"></div>
         </div>
+        <div class="hint">Excel等から出力したCSV（1行目は見出し）を選んでください。</div>
 
-        <div id="csvSource">
-          <div class="field">
-            <input type="file" id="csvFile" accept=".csv,text/csv">
-          </div>
-          <div class="hint">Excel等から出力したCSV（1行目は見出し）を選んでください。文字化けする場合は「文字コード」を変えて再読込してください。</div>
-          <div class="field" style="margin-top:8px;">
-            <label>文字コード</label>
+        <details class="encoding-advanced">
+          <summary class="sub-hint">文字コードを変更する（文字化けする場合）</summary>
+          <div class="field" style="margin-top:6px;">
             <select id="encodingSelect">
               <option value="utf-8">UTF-8（Excel既定・BOM付き含む）</option>
               <option value="shift-jis" selected>Shift-JIS（古いExcel/文字化けする場合）</option>
             </select>
           </div>
-        </div>
-
-        <div id="excelSource" style="display:none;">
-          <div class="field">
-            <input type="file" id="excelFile" accept=".xlsx,.xls">
-          </div>
-          <div class="hint">Excelファイル（1行目は見出し）を選んでください。</div>
-          <div class="field" style="margin-top:8px;">
-            <label>シート</label>
-            <select id="excelSheetSelect" disabled>
-              <option value="">（ファイルを選択してください）</option>
-            </select>
-          </div>
-        </div>
+        </details>
 
         <div id="dataSummary" class="hint"></div>
       </div>
@@ -456,14 +453,6 @@
 
   const $ = (id) => document.getElementById(id);
 
-  // ---------- Data source switch (CSV / Excel) ----------
-  $("sourceMode").addEventListener("change", () => {
-    const mode = $("sourceMode").value;
-    $("csvSource").style.display = mode === "csv" ? "block" : "none";
-    $("excelSource").style.display = mode === "excel" ? "block" : "none";
-    $("dataSummary").textContent = "";
-  });
-
   // ---------- CSV parsing (handles quoted fields, commas, CRLF) ----------
   function parseCSV(text){
     // strip BOM
@@ -501,6 +490,7 @@
   $("csvFile").addEventListener("change", (e) => {
     const file = e.target.files[0];
     if(!file) return;
+    $("csvFileName").textContent = file.name;
     const reader = new FileReader();
     reader.onload = () => {
       const enc = $("encodingSelect").value;
@@ -928,59 +918,6 @@
       { zip: "1234567", addr: "東京都千代田区丸の内1-1-1 サンプルビル101", name: "見本 太郎 様" };
     printRecipients([sample]);
   });
-
-  // ---------- Excel file reading ----------
-  let excelWorkbook = null;
-
-  function setLoading(msg){
-    $("dataSummary").innerHTML = `<span class="spinner"></span><span class="loading-text">${escapeHTML(msg)}</span>`;
-  }
-
-  $("excelFile").addEventListener("change", (e) => {
-    const file = e.target.files[0];
-    const sheetSel = $("excelSheetSelect");
-    sheetSel.innerHTML = "";
-    sheetSel.disabled = true;
-    excelWorkbook = null;
-    if(!file) return;
-    setLoading("Excelファイルを読み込み中…");
-    const reader = new FileReader();
-    reader.onload = () => {
-      try{
-        excelWorkbook = XLSX.read(reader.result, { type: "array" });
-        populateExcelSheetSelect();
-        loadExcelSheet($("excelSheetSelect").value);
-      }catch(err){
-        $("dataSummary").textContent = "Excelファイルを読み取れませんでした。ファイル形式をご確認ください。";
-      }
-    };
-    reader.readAsArrayBuffer(file);
-  });
-
-  // シートが複数ある場合に選べるようにする。何もしなければ先頭のシートが自動で使われる。
-  function populateExcelSheetSelect(){
-    const sel = $("excelSheetSelect");
-    sel.innerHTML = "";
-    (excelWorkbook.SheetNames || []).forEach(name => {
-      const opt = document.createElement("option");
-      opt.value = name; opt.textContent = name;
-      sel.appendChild(opt);
-    });
-    sel.disabled = excelWorkbook.SheetNames.length === 0;
-  }
-
-  $("excelSheetSelect").addEventListener("change", () => {
-    loadExcelSheet($("excelSheetSelect").value);
-  });
-
-  function loadExcelSheet(sheetName){
-    if(!excelWorkbook || !sheetName) return;
-    const ws = excelWorkbook.Sheets[sheetName];
-    const table = XLSX.utils.sheet_to_json(ws, { header: 1, defval: "", raw: false });
-    if(applyTable(table)){
-      $("dataSummary").textContent = `「${sheetName}」から ${recipients.length} 件のデータを読み込みました。`;
-    }
-  }
 
   renderRecipientTable();
   renderPreview();
