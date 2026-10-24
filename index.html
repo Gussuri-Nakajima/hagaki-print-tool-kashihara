@@ -79,15 +79,9 @@
   }
   .sel-count { font-weight: 700; color: #2f6fed; font-size: 14px; }
   .recipient-title-row .hint { font-size: 13px; color: #000; }
-  #selAllBtn, #selNoneBtn, #unlockLineBtn { font-size: 14px; }
-  .line-unlock-row { flex: none; margin-bottom: 8px; }
-  .btn.btn-line { background: #06c755; color: #fff; }
-  .btn.btn-line-outline { background: #fff; color: #06c755; border: 2px solid #06c755; }
+  #selAllBtn, #selNoneBtn { font-size: 14px; }
   .recipient-table-wrap { flex: 1 1 0; min-height: 0; overflow: auto; border: 1px solid #eee; }
   .recipient-table-wrap table.csv-table { font-size: 12px; }
-  table.csv-table td.dim-cell { opacity: .4; }
-  .line-icon-cell { text-align: center; width: 32px; }
-  .line-badge { font-size: 10px; font-weight: 700; color: #06c755; }
   .field { margin-bottom: 10px; }
   .field label {
     display: block;
@@ -302,18 +296,6 @@
     bottom: 0;
     background: #d9d9d9;
   }
-  .line-marker {
-    position: absolute;
-    left: 0;
-    right: 0;
-    bottom: 0;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    gap: 6px;
-  }
-  .line-marker-text { font-size: 12px; font-weight: 700; color: #333; }
   .sub-hint { font-size: 11px; color:#999; }
 
   /* ---- Print rules ---- */
@@ -381,16 +363,16 @@
           <select id="mapZip"></select>
         </div>
         <div class="field">
-          <label>住所の列</label>
+          <label>住所1の列</label>
           <select id="mapAddr1"></select>
+        </div>
+        <div class="field">
+          <label>住所2の列</label>
+          <select id="mapAddr2"></select>
         </div>
         <div class="field">
           <label>氏名の列</label>
           <select id="mapName"></select>
-        </div>
-        <div class="field">
-          <label>LINE登録判定の列</label>
-          <select id="mapLine"></select>
         </div>
         <div class="field">
           <label><input type="checkbox" id="autoHonorific" checked> 氏名に「様」が無ければ自動で付ける</label>
@@ -454,9 +436,6 @@
       </span>
       <span class="sel-count" id="selCount">0件選択中</span>
     </div>
-    <div class="line-unlock-row" id="lineUnlockRow" style="display:none;">
-      <button class="btn small btn-line" id="unlockLineBtn" type="button">LINE登録者も印刷する</button>
-    </div>
     <div class="recipient-table-wrap">
       <table class="csv-table" id="recipientTable"></table>
     </div>
@@ -472,9 +451,8 @@
 
   let headers = [];
   let rows = [];           // raw csv rows (array of objects, keyed by header)
-  let recipients = [];     // mapped {zip, addr, name, lineRegistered, selected}
+  let recipients = [];     // mapped {zip, addr, name, selected}
   let previewIndex = 0;
-  let lineRowsLocked = true; // LINE登録済みの行は既定でチェック操作をロックする
 
   const $ = (id) => document.getElementById(id);
 
@@ -556,7 +534,7 @@
     populateMappingSelects();
     autoDetectMapping();
     buildRecipients();
-    previewIndex = defaultPreviewIndex();
+    previewIndex = 0;
     renderRecipientTable();
     renderPreview();
     renderEditBox();
@@ -564,8 +542,8 @@
   }
 
   function populateMappingSelects(){
-    const selects = ["mapZip","mapAddr1","mapName"];
-    selects.forEach(id => {
+    const requiredSelects = ["mapZip","mapAddr1","mapName"];
+    requiredSelects.forEach(id => {
       const sel = $(id);
       sel.innerHTML = "";
       headers.forEach(h => {
@@ -574,34 +552,38 @@
         sel.appendChild(opt);
       });
     });
-    const lineSel = $("mapLine");
-    lineSel.innerHTML = "";
+    // 住所2は無い場合もあるので「使用しない」を選べるようにする
+    const addr2Sel = $("mapAddr2");
+    addr2Sel.innerHTML = "";
     const optNone = document.createElement("option");
     optNone.value = ""; optNone.textContent = "（使用しない）";
-    lineSel.appendChild(optNone);
+    addr2Sel.appendChild(optNone);
     headers.forEach(h => {
       const opt = document.createElement("option");
       opt.value = h; opt.textContent = h;
-      lineSel.appendChild(opt);
+      addr2Sel.appendChild(opt);
     });
   }
 
+  // 見出し名から列を自動で対応付ける。見つからない場合は②で手動で選び直せる。
   function autoDetectMapping(){
-    const pick = (keywords) => headers.find(h => keywords.some(k => h.includes(k)));
-    const zip = pick(["郵便", "〒", "zip", "postal"]);
-    const name = pick(["氏名", "名前", "name", "宛名"]);
-    const addr1 = pick(["住所", "address"]) || headers.find(h => !/郵便|氏名|名前|敬称/.test(h) && h !== zip && h !== name);
-    // 「LINE」を含む見出しを探す（大文字小文字を区別しない。セル内改行があってもLINEの文字列自体は分割されないため検出できる）
-    const line = headers.find(h => /line/i.test(h));
+    const pick = (keywords, exclude) => headers.find(h =>
+      keywords.some(k => h.includes(k)) && !(exclude && exclude.test(h))
+    );
+    const BIZ_EXCLUDE = /業務|会社|勤務/; // 業務先住所・業務先郵便番号など、宛名印刷に使わない列を除外する
+    const zip = pick(["郵便番号", "郵便", "〒", "zip", "postal"], BIZ_EXCLUDE);
+    const name = pick(["氏名", "名前", "name", "宛名"], /かな|カナ|フリガナ|kana/i);
+    const addr1 = pick(["住所1", "住所１", "address1"]) || pick(["住所", "address"], BIZ_EXCLUDE);
+    const addr2 = pick(["住所2", "住所２", "address2"]);
     if(zip) $("mapZip").value = zip;
     if(addr1) $("mapAddr1").value = addr1;
+    if(addr2) $("mapAddr2").value = addr2;
     if(name) $("mapName").value = name;
-    if(line) $("mapLine").value = line;
   }
 
   $("applyMapping").addEventListener("click", () => {
     buildRecipients();
-    previewIndex = defaultPreviewIndex();
+    previewIndex = 0;
     renderRecipientTable();
     renderPreview();
     renderEditBox();
@@ -619,51 +601,38 @@
     }).join("\n");
   }
 
-  // チェックボックス列は true/false（文字列化すると "true"/"false"）で入ってくる場合に対応する
-  function isLineTrue(raw){
-    return /^(true|1|はい|✓|レ|済)$/i.test((raw || "").trim());
-  }
-
+  // 住所1・住所2は改行区切りで1つの住所として保持する（はがき印字の1行目・2行目にそのまま対応）
   function buildRecipients(){
     const zipCol = $("mapZip").value;
-    const a1Col = $("mapAddr1").value;
+    const addr1Col = $("mapAddr1").value;
+    const addr2Col = $("mapAddr2").value;
     const nameCol = $("mapName").value;
-    const lineCol = $("mapLine").value;
 
     recipients = rows.map((r, idx) => {
       const name = (r[nameCol] || "").trim();
       const zip = (r[zipCol] || "").replace(/[^0-9]/g, "");
-      const addr = (r[a1Col] || "").trim();
-      const lineRegistered = lineCol ? isLineTrue(r[lineCol]) : false;
-      return { idx, zip, addr, origAddr: addr, name, origName: name, lineRegistered, selected: !lineRegistered };
+      const addr1 = (r[addr1Col] || "").trim();
+      const addr2 = addr2Col ? (r[addr2Col] || "").trim() : "";
+      const addr = addr2 ? `${addr1}\n${addr2}` : addr1;
+      return { idx, zip, addr, origAddr: addr, name, origName: name, selected: true };
     }).filter(rec => rec.addr || rec.name); // 住所・氏名がともに空欄の行は対象外
-    lineRowsLocked = true;
-  }
-
-  // 読み込み直後のプレビューは、最初の「選択済み（印刷対象）」の宛名を表示する
-  function defaultPreviewIndex(){
-    const i = recipients.findIndex(r => r.selected);
-    return i === -1 ? 0 : i;
   }
 
   function renderRecipientTable(){
     const table = $("recipientTable");
     table.innerHTML = "";
     const thead = document.createElement("tr");
-    ["", "郵便番号", "住所", "氏名", "LINE"].forEach(t => {
+    ["", "郵便番号", "住所", "氏名"].forEach(t => {
       const th = document.createElement("th"); th.textContent = t; thead.appendChild(th);
     });
     table.appendChild(thead);
     recipients.forEach((rec, i) => {
       const tr = document.createElement("tr");
       if(i === previewIndex) tr.classList.add("current-row");
-      const dim = rec.lineRegistered && lineRowsLocked;
 
       const tdChk = document.createElement("td");
-      if(dim) tdChk.classList.add("dim-cell");
       const chk = document.createElement("input");
       chk.type = "checkbox"; chk.checked = rec.selected;
-      chk.disabled = dim;
       chk.addEventListener("change", () => {
         rec.selected = chk.checked;
         updateSelCount();
@@ -673,26 +642,15 @@
       tr.appendChild(tdChk);
 
       const tdZip = document.createElement("td"); tdZip.textContent = rec.zip;
-      if(dim) tdZip.classList.add("dim-cell");
       tr.appendChild(tdZip);
 
       const tdAddr = document.createElement("td"); tdAddr.textContent = rec.addr;
       if(rec.addr !== rec.origAddr) tdAddr.classList.add("edited-cell");
-      if(dim) tdAddr.classList.add("dim-cell");
       tr.appendChild(tdAddr);
 
       const tdName = document.createElement("td"); tdName.textContent = withHonorific(rec.name);
       if(rec.name !== rec.origName) tdName.classList.add("edited-cell");
-      if(dim) tdName.classList.add("dim-cell");
       tr.appendChild(tdName);
-
-      // LINE登録済みの表示はロック中でも薄くせず、常にはっきり見せる
-      const tdLine = document.createElement("td"); tdLine.classList.add("line-icon-cell");
-      if(rec.lineRegistered){
-        tdLine.textContent = "LINE";
-        tdLine.classList.add("line-badge");
-      }
-      tr.appendChild(tdLine);
 
       tr.addEventListener("click", (e) => {
         if(e.target.tagName !== "INPUT"){ previewIndex = i; renderPreview(); renderEditBox(); renderRecipientTable(); }
@@ -700,39 +658,7 @@
       table.appendChild(tr);
     });
     updateSelCount();
-    updateLineUnlockRow();
   }
-
-  function updateLineUnlockRow(){
-    const hasLineRows = recipients.some(r => r.lineRegistered);
-    const row = $("lineUnlockRow");
-    const btn = $("unlockLineBtn");
-    if(!hasLineRows){ row.style.display = "none"; return; }
-    row.style.display = "block";
-    if(lineRowsLocked){
-      btn.textContent = "LINE登録者も印刷する";
-      btn.className = "btn small btn-line";
-    } else {
-      btn.textContent = "LINE登録者をロックに戻す（印刷しない）";
-      btn.className = "btn small btn-line-outline";
-    }
-  }
-
-  $("unlockLineBtn").addEventListener("click", () => {
-    if(lineRowsLocked){
-      const ok = confirm("LINE登録者も印刷に加えますか？\n※連絡の重複がないかご注意ください。");
-      if(!ok) return;
-      lineRowsLocked = false;
-      // ロック解除と同時に、LINE登録者も印刷対象としてチェックを入れる
-      recipients.forEach(r => { if(r.lineRegistered) r.selected = true; });
-    } else {
-      lineRowsLocked = true;
-      // ロックに戻す際は、解除中に選択されたLINE登録者を安全のため選択解除しておく
-      recipients.forEach(r => { if(r.lineRegistered) r.selected = false; });
-    }
-    renderRecipientTable();
-    renderPreview();
-  });
 
   function updateSelCount(){
     const selectedCount = recipients.filter(r => r.selected).length;
@@ -742,8 +668,7 @@
   }
 
   $("selAllBtn").addEventListener("click", () => {
-    // LINE登録済みがロック中の行は「すべて選択」でも対象にしない
-    recipients.forEach(r => { if(!(r.lineRegistered && lineRowsLocked)) r.selected = true; });
+    recipients.forEach(r => r.selected = true);
     renderRecipientTable();
     renderPreview();
   });
@@ -804,10 +729,6 @@
 
     const stampHTML = forPrint ? "" : `<div class="stamp-box" style="left:${STAMP_BOX.left}mm; top:${STAMP_BOX.top}mm; width:${STAMP_BOX.width}mm; height:${STAMP_BOX.height}mm;"></div>`;
     const designZoneHTML = forPrint ? "" : `<div class="design-zone" style="top:${DESIGN_ZONE_TOP_MM}mm;"></div>`;
-    const lineMarkerHTML = (!forPrint && rec.lineRegistered) ? `
-      <div class="line-marker" style="top:${DESIGN_ZONE_TOP_MM}mm;">
-        <div class="line-marker-text">LINE登録者です</div>
-      </div>` : "";
 
     const addrHTML = twoLineBlockHTML("addr-block", splitAddressLines(rec.addr), ADDR_LEFT_MM, ADDR_Y_MM, addrWidthMM, ADDR_FONT_SIZE_PT, forPrint);
     const nameHTML = oneLineBlockHTML("name-block", withHonorific(rec.name), NAME_LEFT_MM, NAME_Y_MM, nameWidthMM, NAME_FONT_SIZE_PT, forPrint);
@@ -816,7 +737,6 @@
       <div class="postcard">
         ${stampHTML}
         ${designZoneHTML}
-        ${lineMarkerHTML}
         <div class="zip-box-row" style="left:${ZIP_X_MM}mm; top:${ZIP_Y_MM}mm;">
           ${zipHTML}
         </div>
