@@ -33,7 +33,7 @@
     flex-direction: column;
   }
   .panel details { margin: 0; }
-  .panel summary {
+  .panel details.section > summary {
     font-size: 15px;
     margin: 18px -6px 8px;
     padding: 4px 6px;
@@ -44,8 +44,8 @@
     border-radius: 4px 4px 0 0;
     transition: background-color .12s;
   }
-  .panel summary:hover { background-color: #e8f0ff; }
-  .panel details:first-of-type summary { margin-top: 0; }
+  .panel details.section > summary:hover { background-color: #e8f0ff; }
+  .panel details.section:first-of-type > summary { margin-top: 0; }
   .panel .section-body { padding-top: 2px; }
   /* 右カラム：宛名リストをヘッダー固定＋表だけスクロールで画面いっぱいに表示する */
   .recipient-panel {
@@ -174,13 +174,14 @@
     overflow: hidden;
     opacity: 0;
   }
-  .file-select-btn {
+  .field label.file-select-btn {
     text-align: center;
     font-size: 16px;
     padding: 14px;
+    color: #fff;
   }
   .file-select-btn:hover { opacity: .9; }
-  #csvFileName { word-break: break-all; }
+  #csvFileName { font-size: 14px; font-weight: 700; color: #222; word-break: break-all; margin-top: 6px; }
   .encoding-advanced { margin-top: 10px; }
   .encoding-advanced summary { cursor: pointer; }
   .print-note { font-size: 14px; color: #333; line-height: 1.7; margin-top: 6px; }
@@ -334,9 +335,8 @@
         <div class="field">
           <label class="btn primary-action file-select-btn" for="csvFile">CSVファイルを選択</label>
           <input type="file" id="csvFile" accept=".csv,text/csv" class="visually-hidden">
-          <div id="csvFileName" class="hint"></div>
+          <div id="csvFileName"></div>
         </div>
-        <div class="hint">Excel等から出力したCSV（1行目は見出し）を選んでください。</div>
 
         <details class="encoding-advanced">
           <summary class="sub-hint">文字コードを変更する（文字化けする場合）</summary>
