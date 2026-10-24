@@ -86,8 +86,8 @@
   .recipient-table-wrap { flex: 1 1 0; min-height: 0; overflow: auto; border: 1px solid #eee; }
   .recipient-table-wrap table.csv-table { font-size: 12px; }
   table.csv-table td.dim-cell { opacity: .4; }
-  .line-icon-cell { text-align: center; width: 20px; }
-  .line-icon { width: 16px; height: 16px; vertical-align: middle; }
+  .line-icon-cell { text-align: center; width: 32px; }
+  .line-badge { font-size: 10px; font-weight: 700; color: #06c755; }
   .field { margin-bottom: 10px; }
   .field label {
     display: block;
@@ -313,7 +313,6 @@
     justify-content: center;
     gap: 6px;
   }
-  .line-marker-icon { width: 16mm; height: auto; }
   .line-marker-text { font-size: 12px; font-weight: 700; color: #333; }
   .sub-hint { font-size: 11px; color:#999; }
 
@@ -687,12 +686,11 @@
       if(dim) tdName.classList.add("dim-cell");
       tr.appendChild(tdName);
 
-      // LINEアイコンはロック中でも薄くせず、常にはっきり見せる
+      // LINE登録済みの表示はロック中でも薄くせず、常にはっきり見せる
       const tdLine = document.createElement("td"); tdLine.classList.add("line-icon-cell");
       if(rec.lineRegistered){
-        const img = document.createElement("img");
-        img.src = "LINE_RGB.svg"; img.alt = "LINE登録済み"; img.className = "line-icon";
-        tdLine.appendChild(img);
+        tdLine.textContent = "LINE";
+        tdLine.classList.add("line-badge");
       }
       tr.appendChild(tdLine);
 
@@ -808,7 +806,6 @@
     const designZoneHTML = forPrint ? "" : `<div class="design-zone" style="top:${DESIGN_ZONE_TOP_MM}mm;"></div>`;
     const lineMarkerHTML = (!forPrint && rec.lineRegistered) ? `
       <div class="line-marker" style="top:${DESIGN_ZONE_TOP_MM}mm;">
-        <img src="LINE_RGB.svg" alt="LINE" class="line-marker-icon">
         <div class="line-marker-text">LINE登録者です</div>
       </div>` : "";
 
